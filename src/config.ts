@@ -9,5 +9,6 @@ export const ROOM = {
 };
 
 export const WALL_PLANE_Z = -4.5;
-export const WALL_BOTTOM_Y = -8;
+// Keep the stone landing line above the bottom voice visualizer panel.
+export const WALL_BOTTOM_Y = -7;
 export const Z_BACK = -4.25;

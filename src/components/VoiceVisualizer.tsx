@@ -87,11 +87,13 @@ export function VoiceVisualizer() {
   }, [analyser, systemStatus]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="voice-visualizer"
-      width={960}
-      height={90}
-    />
+    <div className="voice-visualizer">
+      <canvas
+        ref={canvasRef}
+        className="voice-visualizer-canvas"
+        width={960}
+        height={90}
+      />
+    </div>
   );
 }
