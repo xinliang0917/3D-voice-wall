@@ -1,0 +1,49 @@
+{
+  "name": "multilingual-3d-voice-wall",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:full": "concurrently -k -n web,api -c cyan,magenta \"npm:dev\" \"npm:dev:server\"",
+    "funasr": "powershell -ExecutionPolicy Bypass -File scripts/start-funasr.ps1",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b && tsc -p tsconfig.server.json",
+    "preview": "vite preview",
+    "start": "tsx server/index.ts",
+    "setup:assets": "node scripts/setup-assets.mjs && node scripts/download-fonts.mjs"
+  },
+  "dependencies": {
+    "@react-three/drei": "9.114.3",
+    "@react-three/fiber": "8.17.10",
+    "@react-three/postprocessing": "2.19.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "framer-motion": "11.11.9",
+    "lucide-react": "0.462.0",
+    "matter-js": "^0.20.0",
+    "postprocessing": "6.36.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "0.170.0",
+    "three-text": "0.6.5",
+    "woff-lib": "0.0.3",
+    "ws": "^8.18.0",
+    "zustand": "4.5.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/matter-js": "^0.20.2",
+    "@types/node": "^22.10.5",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/three": "0.170.0",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "4.3.3",
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "5.6.3",
+    "vite": "5.4.10"
+  }
+}
