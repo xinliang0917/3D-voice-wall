@@ -78,25 +78,6 @@ select {
   color: #9fc0ff;
 }
 
-.brand-logos {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-  pointer-events: none;
-  opacity: 1;
-}
-
-.brand-logo {
-  display: block;
-  width: auto;
-  height: 30px;
-  object-fit: contain;
-}
-
-.brand-logo-u2 {
-  height: 34px;
-}
-
 .status-pill {
   display: flex;
   align-items: center;

@@ -1,5 +1,3 @@
-import { BrandLogos } from './BrandLogos';
-
 export function Header() {
   return (
     <header className="header">
@@ -7,7 +5,6 @@ export function Header() {
         <div className="brand-title">3D VOICE WALL</div>
         <div className="brand-sub">MULTILINGUAL AI INTERACTION</div>
       </div>
-      <BrandLogos />
     </header>
   );
 }

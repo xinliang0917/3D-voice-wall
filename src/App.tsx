@@ -10,6 +10,7 @@ import { LanguageStats } from './components/LanguageStats';
 import { VoiceVisualizer } from './components/VoiceVisualizer';
 import { ControlBar } from './components/ControlBar';
 import { HoverInfo } from './components/HoverInfo';
+import { LogoBackdrop } from './components/LogoBackdrop';
 
 export default function App() {
   const systemStatus = useVoiceStore((state) => state.systemStatus);
@@ -53,6 +54,7 @@ export default function App() {
           />
           <pointLight position={[0, 2.5, 5]} intensity={0.6} color="#ffffff" />
           <Room />
+          <LogoBackdrop />
           <VoiceTextManager />
         </Canvas>
       </div>
