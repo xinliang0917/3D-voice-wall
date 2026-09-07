@@ -14,6 +14,7 @@ export interface ServerConfig {
   autoRetryZh: boolean;
   speechAutoLanguages: string[];
   speechStreaming: boolean;
+  speechVendor: 'dashscope' | 'unisound';
 }
 
 export const serverConfig: ServerConfig = {
@@ -33,4 +34,5 @@ export const serverConfig: ServerConfig = {
     .map((code) => code.trim())
     .filter(Boolean),
   speechStreaming: process.env.SPEECH_STREAMING === 'true',
+  speechVendor: process.env.SPEECH_VENDOR === 'unisound' ? 'unisound' : 'dashscope',
 };

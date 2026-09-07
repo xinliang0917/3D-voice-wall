@@ -19,14 +19,23 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+#root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 button,
 select {
   font-family: inherit;
 }
 
 .app {
-  position: fixed;
-  inset: 0;
+  position: relative;
+  width: min(100vw, calc(100vh * 4 / 5));
+  height: min(100vh, calc(100vw * 5 / 4));
+  overflow: hidden;
+  background: #0b2f6b;
 }
 
 .canvas-shell {
@@ -44,6 +53,16 @@ select {
   inset: 0;
   z-index: 10;
   pointer-events: none;
+}
+
+.text-foreground-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.text-foreground-layer canvas {
+  display: block;
 }
 
 .header {
@@ -217,8 +236,10 @@ select {
 
 .language-stats {
   position: absolute;
-  right: 40px;
-  bottom: 110px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
   width: 210px;
   padding: 12px 13px;
   border: 1px solid rgba(110, 165, 255, 0.28);
@@ -279,6 +300,7 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
+  z-index: 5;
   pointer-events: auto;
 }
 
@@ -347,36 +369,28 @@ select {
 
 .voice-visualizer {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 54px;
-  background: linear-gradient(
-    to top,
-    rgba(2, 10, 34, 0.96),
-    rgba(5, 18, 54, 0.86) 38%,
-    rgba(7, 24, 62, 0.58) 72%,
-    rgba(7, 24, 62, 0.14)
-  );
-  border-top: 1px solid rgba(110, 165, 255, 0.28);
-  box-shadow:
-    0 -18px 42px rgba(0, 10, 40, 0.42),
-    inset 0 1px 0 rgba(130, 185, 255, 0.1);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  opacity: 1;
+  top: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  width: min(260px, calc(100% - 24px));
+  height: 34px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(30, 64, 175, 0.14);
   pointer-events: none;
 }
 
 .voice-visualizer-canvas {
   position: absolute;
   left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
-  width: 100vw;
-  height: 36px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 26px;
   opacity: 0.95;
-  filter: drop-shadow(0 4px 12px rgba(0, 10, 40, 0.3));
+  filter: drop-shadow(0 2px 6px rgba(37, 99, 235, 0.18));
   pointer-events: none;
 }
 
@@ -386,6 +400,7 @@ select {
   bottom: 132px;
   transform: translateX(-50%);
   width: min(270px, calc(100% - 32px));
+  z-index: 4;
   pointer-events: none;
 }
 
@@ -478,14 +493,6 @@ select {
 
   .language-select {
     display: none;
-  }
-
-  .voice-visualizer {
-    height: 48px;
-  }
-
-  .voice-visualizer-canvas {
-    bottom: 6px;
   }
 
   .hover-info {

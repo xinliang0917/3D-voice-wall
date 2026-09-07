@@ -2,35 +2,46 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree, type RootState } from '@react-three/fiber';
 import { useVoiceStore } from '../store/voiceStore';
-import { MAX_VISIBLE_MESSAGES, WALL_BOTTOM_Y, Z_BACK } from '../config';
-import { createTextGeometry } from '../three/TextRenderer3D';
 import {
-  ImpactEffects,
-  publishStoneImpact,
-  publishStoneResting,
-} from '../three/ImpactEffects';
+  WALL_BOTTOM_Y,
+  Z_BACK,
+} from '../config';
+import { createTextGeometry } from '../three/TextRenderer3D';
+import { publishStoneResting } from '../three/ImpactEffects';
 import { ColumnLayout } from '../three/ColumnLayout';
 import { StonePhysics } from '../three/StonePhysics';
+import {
+  getDanmakuRegion,
+  type DanmakuRegion,
+} from '../three/danmakuSpace';
 import type { VoiceTextObject } from '../three/VoiceTextObject';
 import type { HoveredMessage, VoiceMessage } from '../types/voice';
 import { getLanguageMeta } from '../utils/language';
+import {
+  getTextLength,
+  planTextLines,
+  type TextFontLevel,
+} from '../utils/textLayout';
 
 const FLOATING_DURATION = 1.75;
 const TRANSFORM_DURATION = 0.6;
-const FLOAT_FONT_SIZE = 1.5;
 const TEXT_DEPTH = 0.5;
-const MAX_FLOAT_WIDTH = 12.5;
+const LINE_FONT_SIZES: Record<TextFontLevel, number> = {
+  1: 1.12,
+  2: 0.95,
+  3: 0.82,
+  4: 0.7,
+};
 const IMPACT_SHAKE_DURATION = 0.3;
 const SHAKE_PIXELS = 4.5;
 const IMPACT_STATE_DURATION = 0.14;
-const FALL_START_Y = 4.8;
-const FALL_START_JITTER = 0.35;
 const IMPACT_TRIGGER_SPEED = 2.8;
 const REST_SPEED = 0.35;
 const REST_ANGULAR_SPEED = 0.3;
 const REST_SETTLE_TIME = 0.28;
 const WAKE_SPEED = 1.8;
 const WAKE_ANGULAR_SPEED = 0.8;
+const GROUP_LINE_Z_JITTER = 0.08;
 
 const FRONT_COLOR = new THREE.Color('#ffffff');
 const BACK_COLOR = new THREE.Color('#d9e8ff');
@@ -60,8 +71,74 @@ function scorePlacement(
     if (overlap > 0) score += overlap * 10;
     score += Math.min(0.6, Math.abs(x - otherX) * 0.06);
   });
-  score += Math.abs(x) * 0.04;
   return score;
+}
+
+function lineSpacingForFont(fontSize: number): number {
+  return fontSize + 0.24;
+}
+
+function estimateLineRenderWidth(
+  text: string,
+  languageCode: string,
+  level: TextFontLevel,
+  region: DanmakuRegion,
+): number {
+  const estimated =
+    Math.max(0.3, getTextLength(text, languageCode)) *
+    LINE_FONT_SIZES[level] *
+    0.96;
+  return Math.min(region.maxLineWidth, Math.max(0.65, estimated));
+}
+
+function estimateMessageWidth(
+  message: VoiceMessage,
+  lines: Array<{ text: string; level: TextFontLevel }>,
+  region: DanmakuRegion,
+): number {
+  if (lines.length === 1) {
+    return estimateLineRenderWidth(
+      lines[0].text,
+      message.languageCode,
+      lines[0].level,
+      region,
+    );
+  }
+  const lineWidths = lines.map((line) =>
+    estimateLineRenderWidth(
+      line.text,
+      message.languageCode,
+      line.level,
+      region,
+    ),
+  );
+  return Math.max(...lineWidths);
+}
+
+function getRotationLimit(
+  lineCount: number,
+  width: number,
+  height: number,
+): number {
+  if (lineCount > 1) return 0.05;
+  const aspect = width / Math.max(0.001, height);
+  if (aspect >= 3.2) return 0.045;
+  if (aspect >= 2.1) return 0.085;
+  if (aspect >= 1.2) return 0.13;
+  return 0.2;
+}
+
+function pickRotationZ(
+  lineCount: number,
+  width: number,
+  height: number,
+): number {
+  const limit = getRotationLimit(lineCount, width, height);
+  const commonFraction = Math.random() < 0.72 ? 0.45 : 1;
+  return randomBetween(
+    -limit * commonFraction,
+    limit * commonFraction,
+  );
 }
 
 function createStoneBumpTexture(): THREE.CanvasTexture {
@@ -120,15 +197,29 @@ function getSoftShadowTexture(): THREE.CanvasTexture {
   return softShadowTexture;
 }
 
-async function createVoiceTextObject(
-  message: VoiceMessage,
-  layout: ColumnLayout,
-  objects: Map<string, VoiceTextObject>,
-): Promise<VoiceTextObject | null> {
+interface CreateVoiceTextOptions {
+  message: VoiceMessage;
+  lineText: string;
+  lineIndex: number;
+  lineCount: number;
+  fontSize: number;
+  placementX: number;
+  region: DanmakuRegion;
+}
+
+async function createVoiceTextObject({
+  message,
+  lineText,
+  lineIndex,
+  lineCount,
+  fontSize,
+  placementX,
+  region,
+}: CreateVoiceTextOptions): Promise<VoiceTextObject | null> {
   const result = await createTextGeometry(
-    message.text,
+    lineText,
     message.languageCode,
-    FLOAT_FONT_SIZE,
+    fontSize,
     TEXT_DEPTH,
   );
   if (!result) return null;
@@ -162,7 +253,8 @@ async function createVoiceTextObject(
     backMaterial,
     sideMaterial,
   ]);
-  mesh.userData.voiceId = message.id;
+  const id = `${message.id}:${lineIndex}`;
+  mesh.userData.voiceId = id;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
@@ -184,7 +276,10 @@ async function createVoiceTextObject(
   contactShadow.rotation.x = -Math.PI / 2;
   contactShadow.renderOrder = 2;
 
-  const baseScale = Math.min(1, MAX_FLOAT_WIDTH / Math.max(result.width, 0.001));
+  const baseScale = Math.min(
+    1,
+    region.maxLineWidth / Math.max(result.width, 0.001),
+  );
   frontMaterial.emissive.set('#ffffff');
   frontMaterial.emissiveIntensity = 0.06;
   mesh.scale.setScalar(baseScale);
@@ -192,19 +287,34 @@ async function createVoiceTextObject(
   const width = result.width * baseScale;
   const height = result.height * baseScale;
   const depth = result.depth * baseScale;
-  const x = layout.findPlacement(width, (candidate) =>
-    scorePlacement(candidate, width, objects),
-  );
-  const y = FALL_START_Y + randomBetween(-FALL_START_JITTER, FALL_START_JITTER);
+  const spacing = lineCount > 1 ? lineSpacingForFont(fontSize) : 0;
+  const groupHalfHeight =
+    lineCount > 1 ? ((lineCount - 1) * spacing) / 2 : 0;
+  const centerY =
+    region.topY -
+    groupHalfHeight -
+    Math.max(0.12, height * 0.55);
+  const lineOffset =
+    lineCount > 1 ? lineIndex - (lineCount - 1) / 2 : 0;
+  const y = centerY + lineOffset * spacing;
   const floatRotationX = 0;
-  const floatRotationY = 0;
-  const floatRotationZ = randomBetween(-0.06, 0.06);
-  group.position.set(x, y, Z_BACK);
+  const floatRotationY =
+    lineCount > 1 ? randomBetween(-0.02, 0.02) : randomBetween(-0.04, 0.04);
+  const floatRotationZ = pickRotationZ(lineCount, width, height);
+  const z =
+    lineCount > 1
+      ? Z_BACK + randomBetween(-GROUP_LINE_Z_JITTER, GROUP_LINE_Z_JITTER)
+      : Z_BACK;
+  group.position.set(placementX, y, z);
   group.rotation.set(floatRotationX, floatRotationY, floatRotationZ);
 
   return {
-    id: message.id,
+    id,
     message,
+    text: lineText,
+    messageGroupId: message.id,
+    lineIndex,
+    lineCount,
     group,
     mesh,
     frontMaterial,
@@ -228,7 +338,10 @@ async function createVoiceTextObject(
     pendingImpact: false,
     bornAt: performance.now() / 1000,
     fallStartY: y,
-    fallStartVelocity: randomBetween(-2.4, -1.7),
+    fallStartVelocity:
+      lineCount > 1
+        ? randomBetween(-2.1, -1.8)
+        : randomBetween(-2.4, -1.7),
     shockTime: 0,
     impactShockPlayed: false,
   };
@@ -263,7 +376,6 @@ function updateStoneMaterial(obj: VoiceTextObject, progress: number): void {
 function startFalling(obj: VoiceTextObject, physics: StonePhysics): void {
   updateStoneMaterial(obj, 1);
   obj.fallStartY = obj.group.position.y;
-  obj.fallStartVelocity = randomBetween(-2.4, -1.7);
   obj.group.rotation.set(0, 0, obj.floatRotationZ);
   obj.state = 'falling';
   obj.stateTime = 0;
@@ -338,7 +450,10 @@ function updateHover(
   return nextId;
 }
 
-function updateContactShadow(obj: VoiceTextObject): void {
+function updateContactShadow(
+  obj: VoiceTextObject,
+  textHalfWidth: number,
+): void {
   const material = obj.contactShadow.material as THREE.MeshBasicMaterial;
   const height = Math.max(0.02, obj.group.position.y - WALL_BOTTOM_Y);
   const heightFade = THREE.MathUtils.clamp(
@@ -350,8 +465,7 @@ function updateContactShadow(obj: VoiceTextObject): void {
   const scale =
     Math.max(0.8, obj.width * 1.35) * (1 - Math.min(height * 0.012, 0.3));
   const depthScale = Math.max(0.5, obj.depth * 2.2);
-  const maxShadowHalf =
-    14.6 - Math.abs(obj.group.position.x) - 0.08;
+  const maxShadowHalf = textHalfWidth - Math.abs(obj.group.position.x) - 0.08;
   const fittedScale =
     maxShadowHalf > 0.2
       ? Math.min(scale, maxShadowHalf * 2)
@@ -374,18 +488,29 @@ function updateRestingMaterial(obj: VoiceTextObject): void {
   obj.sideMaterial.opacity = 1 - 0.08 * t;
 }
 
-export function VoiceTextManager() {
+interface VoiceTextManagerProps {
+  foreground?: boolean;
+}
+
+export function VoiceTextManager({
+  foreground = false,
+}: VoiceTextManagerProps) {
   const messages = useVoiceStore((state) => state.messages);
   const setHoveredMessage = useVoiceStore((state) => state.setHoveredMessage);
   const camera = useThree((state) => state.camera);
+  const gl = useThree((state) => state.gl);
   const groupRef = useRef<THREE.Group>(null);
   const objectsRef = useRef(new Map<string, VoiceTextObject>());
   const pendingRef = useRef(new Set<string>());
   const queueRef = useRef<Promise<void>>(Promise.resolve());
-  const queueIdsRef = useRef<string[]>([]);
-  const effectsRef = useRef<ImpactEffects | null>(null);
+  const messageQueueRef = useRef<string[]>([]);
+  const removedMessageIdsRef = useRef(new Set<string>());
+  const stoneIdsByMessageRef = useRef(new Map<string, string[]>());
   const physicsRef = useRef<StonePhysics | null>(null);
   const layoutRef = useRef<ColumnLayout | null>(null);
+  const regionRef = useRef(
+    getDanmakuRegion(camera as THREE.PerspectiveCamera, 1, 1),
+  );
   const hoveredIdRef = useRef<string | null>(null);
   const shakeRef = useRef({
     time: 0,
@@ -395,9 +520,80 @@ export function VoiceTextManager() {
     initialized: false,
   });
 
+  const stoneIdsForMessage = (messageId: string): string[] =>
+    stoneIdsByMessageRef.current.get(messageId) ?? [];
+
+  const hasMessageStones = (messageId: string): boolean =>
+    stoneIdsForMessage(messageId).some((id) => objectsRef.current.has(id));
+
+  const removeStone = (id: string): void => {
+    const object = objectsRef.current.get(id);
+    if (!object) return;
+    physicsRef.current?.removeBody(object.body);
+    layoutRef.current?.remove(id);
+    disposeObject(object);
+    objectsRef.current.delete(id);
+
+    const stoneIds = stoneIdsByMessageRef.current.get(
+      object.messageGroupId,
+    );
+    if (stoneIds) {
+      const remaining = stoneIds.filter((entry) => entry !== id);
+      if (remaining.length > 0) {
+        stoneIdsByMessageRef.current.set(object.messageGroupId, remaining);
+      } else {
+        stoneIdsByMessageRef.current.delete(object.messageGroupId);
+      }
+    }
+    physicsRef.current?.wakeAll();
+  };
+
+  const removeMessageGroup = (messageId: string): void => {
+    const stoneIds = [...stoneIdsForMessage(messageId)];
+    stoneIds.forEach((id) => removeStone(id));
+    stoneIdsByMessageRef.current.delete(messageId);
+    messageQueueRef.current = messageQueueRef.current.filter(
+      (entry) => entry !== messageId,
+    );
+    removedMessageIdsRef.current.add(messageId);
+  };
+
+  const ensureCapacity = (
+    region: DanmakuRegion,
+    projectedStones = 0,
+    projectedArea = 0,
+  ): void => {
+    while (messageQueueRef.current.length > 0) {
+      let activeStones = 0;
+      let occupiedArea = 0;
+      objectsRef.current.forEach((object) => {
+        if (object.removing) return;
+        activeStones += 1;
+        occupiedArea += object.width * object.height;
+      });
+
+      const fitsStoneLimit =
+        activeStones + projectedStones <= region.maxStones;
+      const fitsAreaLimit =
+        occupiedArea + projectedArea <= region.occupancyLimit;
+      if (fitsStoneLimit && fitsAreaLimit) break;
+
+      const oldestId = messageQueueRef.current.shift();
+      if (!oldestId) break;
+      removeMessageGroup(oldestId);
+    }
+  };
+
   useEffect(() => {
-    const effects = new ImpactEffects();
-    const layout = new ColumnLayout();
+    const width = Math.max(1, gl.domElement.clientWidth || 1);
+    const height = Math.max(1, gl.domElement.clientHeight || 1);
+    const region = getDanmakuRegion(
+      camera as THREE.PerspectiveCamera,
+      width,
+      height,
+    );
+    regionRef.current = region;
+    const layout = new ColumnLayout(region.halfWidth);
     const physics = new StonePhysics((impact) => {
       const object = objectsRef.current.get(impact.id);
       if (!object || object.removing || !object.body) return;
@@ -409,11 +605,9 @@ export function VoiceTextManager() {
         0,
       );
       object.pendingImpact = true;
-    });
-    effectsRef.current = effects;
+    }, region.halfWidth);
     physicsRef.current = physics;
     layoutRef.current = layout;
-    groupRef.current?.add(effects.group);
 
     return () => {
       objectsRef.current.forEach((obj) => {
@@ -421,112 +615,202 @@ export function VoiceTextManager() {
         disposeObject(obj);
       });
       objectsRef.current.clear();
-      queueIdsRef.current = [];
-      effects.dispose();
+      messageQueueRef.current = [];
+      removedMessageIdsRef.current.clear();
+      stoneIdsByMessageRef.current.clear();
       physics.dispose();
-      effectsRef.current = null;
       physicsRef.current = null;
       layoutRef.current = null;
+      regionRef.current = getDanmakuRegion(
+        camera as THREE.PerspectiveCamera,
+        1,
+        1,
+      );
       hoveredIdRef.current = null;
       setHoveredMessage(null);
     };
-  }, [setHoveredMessage]);
+  }, [camera, gl, setHoveredMessage]);
 
   useEffect(() => {
     const activeIds = new Set(messages.map((message) => message.id));
     const now = performance.now() / 1000;
 
-    objectsRef.current.forEach((obj, id) => {
-      if (!activeIds.has(id) && !obj.removing) {
+    objectsRef.current.forEach((obj) => {
+      if (!activeIds.has(obj.messageGroupId) && !obj.removing) {
         obj.removing = true;
         obj.removeAt = now + 0.5;
       }
     });
 
     messages.forEach((message) => {
-      if (objectsRef.current.has(message.id) || pendingRef.current.has(message.id)) {
+      if (
+        removedMessageIdsRef.current.has(message.id) ||
+        hasMessageStones(message.id) ||
+        pendingRef.current.has(message.id)
+      ) {
         return;
       }
       pendingRef.current.add(message.id);
 
       queueRef.current = queueRef.current.then(async () => {
+        const created: VoiceTextObject[] = [];
         try {
           const layout = layoutRef.current;
           if (!layout) return;
-          ensureCapacity();
-          const object = await createVoiceTextObject(
-            message,
-            layout,
-            objectsRef.current,
+          const width = Math.max(1, gl.domElement.clientWidth || 1);
+          const height = Math.max(1, gl.domElement.clientHeight || 1);
+          const region = getDanmakuRegion(
+            camera as THREE.PerspectiveCamera,
+            width,
+            height,
           );
-          if (!object) return;
+          regionRef.current = region;
+          layout.setSafeHalfWidth(region.halfWidth);
+          physicsRef.current?.setSafeHalfWidth(region.halfWidth);
 
           const stillActive = useVoiceStore
             .getState()
             .messages.some((entry) => entry.id === message.id);
           if (!stillActive) {
-            disposeObject(object);
             return;
           }
 
-          objectsRef.current.set(message.id, object);
-          queueIdsRef.current.push(object.id);
-          groupRef.current?.add(object.group);
-          groupRef.current?.add(object.contactShadow);
-          layout.add(
-            object.id,
-            object.group.position.x,
-            object.width,
+          const lines = planTextLines(
+            message.text,
+            message.languageCode,
+            {
+              lineVisualLimit: region.lineVisualLimit,
+              maxLines: 4,
+            },
           );
+          if (lines.length === 0) return;
+
+          const messageWidth = estimateMessageWidth(
+            message,
+            lines,
+            region,
+          );
+          const projectedArea =
+            messageWidth *
+            (lines.length *
+              Math.max(0.55, LINE_FONT_SIZES[lines[0].level] * 0.92));
+          ensureCapacity(region, lines.length, projectedArea);
+          layout.sync(
+            [...objectsRef.current.entries()]
+              .filter(([, object]) => !object.removing)
+              .map(([id, object]) => ({
+                id,
+                x: object.group.position.x,
+                halfWidth: getHalfWidth(object),
+              })),
+          );
+          const placementX = layout.findPlacement(
+            messageWidth,
+            (candidate) =>
+              scorePlacement(candidate, messageWidth, objectsRef.current),
+          );
+
+          for (
+            let lineIndex = 0;
+            lineIndex < lines.length;
+            lineIndex += 1
+          ) {
+            const line = lines[lineIndex];
+            const object = await createVoiceTextObject({
+              message,
+              lineText: line.text,
+              lineIndex,
+              lineCount: lines.length,
+              fontSize: LINE_FONT_SIZES[line.level],
+              placementX,
+              region,
+            });
+            if (!object) continue;
+            objectsRef.current.set(object.id, object);
+            groupRef.current?.add(object.group);
+            if (!foreground) {
+              groupRef.current?.add(object.contactShadow);
+            }
+            layout.add(
+              object.id,
+              object.group.position.x,
+              object.width,
+            );
+            created.push(object);
+          }
+          if (created.length === 0) return;
+
+          const stillActiveAfterCreate = useVoiceStore
+            .getState()
+            .messages.some((entry) => entry.id === message.id);
+          if (!stillActiveAfterCreate) {
+            created.forEach((object) => removeStone(object.id));
+            return;
+          }
+
+          stoneIdsByMessageRef.current.set(
+            message.id,
+            created.map((object) => object.id),
+          );
+          messageQueueRef.current.push(message.id);
         } catch (error) {
+          created.forEach((object) => removeStone(object.id));
           console.warn(`[VoiceTextManager] Failed to create ${message.id}`, error);
         } finally {
           pendingRef.current.delete(message.id);
         }
       });
     });
+
+    removedMessageIdsRef.current.forEach((messageId) => {
+      if (
+        !activeIds.has(messageId) &&
+        !stoneIdsByMessageRef.current.has(messageId)
+      ) {
+        removedMessageIdsRef.current.delete(messageId);
+      }
+    });
   }, [messages]);
-
-  const removeStone = (id: string): void => {
-    const object = objectsRef.current.get(id);
-    queueIdsRef.current = queueIdsRef.current.filter((entry) => entry !== id);
-    if (!object) return;
-    physicsRef.current?.removeBody(object.body);
-    layoutRef.current?.remove(id);
-    disposeObject(object);
-    objectsRef.current.delete(id);
-    physicsRef.current?.wakeAll();
-  };
-
-  const ensureCapacity = (): void => {
-    while (queueIdsRef.current.length >= MAX_VISIBLE_MESSAGES) {
-      const oldestId = queueIdsRef.current.shift();
-      if (!oldestId) break;
-      removeStone(oldestId);
-    }
-  };
 
   useFrame((state, delta) => {
     const now = performance.now() / 1000;
     const safeDelta = Math.min(delta, 0.05);
+    const canvasWidth = Math.max(
+      1,
+      gl.domElement.clientWidth || state.size.width || 1,
+    );
+    const canvasHeight = Math.max(
+      1,
+      gl.domElement.clientHeight || state.size.height || 1,
+    );
+    const region = getDanmakuRegion(
+      camera as THREE.PerspectiveCamera,
+      canvasWidth,
+      canvasHeight,
+    );
+    regionRef.current = region;
+    layoutRef.current?.setSafeHalfWidth(region.halfWidth);
+    physicsRef.current?.setSafeHalfWidth(region.halfWidth);
 
     const shake = shakeRef.current;
-    if (!shake.initialized) {
-      shake.base.copy(camera.position);
-      shake.initialized = true;
-    }
-    if (shake.time > 0) {
-      const progress = 1 - shake.time / IMPACT_SHAKE_DURATION;
-      const decay = Math.exp(-6 * progress) * Math.cos(7.6 * progress);
-      const offset = shake.amplitude * decay;
-      camera.position.set(
-        shake.base.x + shake.direction.x * offset,
-        shake.base.y + shake.direction.y * offset,
-        shake.base.z,
-      );
-      shake.time -= safeDelta;
-    } else {
-      camera.position.copy(shake.base);
+    if (!foreground) {
+      if (!shake.initialized) {
+        shake.base.copy(camera.position);
+        shake.initialized = true;
+      }
+      if (shake.time > 0) {
+        const progress = 1 - shake.time / IMPACT_SHAKE_DURATION;
+        const decay = Math.exp(-6 * progress) * Math.cos(7.6 * progress);
+        const offset = shake.amplitude * decay;
+        camera.position.set(
+          shake.base.x + shake.direction.x * offset,
+          shake.base.y + shake.direction.y * offset,
+          shake.base.z,
+        );
+        shake.time -= safeDelta;
+      } else {
+        camera.position.copy(shake.base);
+      }
     }
 
     physicsRef.current?.step(safeDelta);
@@ -557,22 +841,6 @@ export function VoiceTextManager() {
         shake.direction.set(1, 0.35, 0);
       }
       shake.direction.normalize();
-
-      const impactPosition = obj.body
-        ? new THREE.Vector3(obj.body.position.x, obj.body.position.y, Z_BACK)
-        : obj.group.position.clone();
-      effectsRef.current?.burst(
-        impactPosition,
-        obj.width,
-        impactSpeed,
-      );
-      publishStoneImpact({
-        id: obj.id,
-        text: obj.message.text,
-        position: impactPosition,
-        speed: impactSpeed,
-        strength: THREE.MathUtils.clamp(impactSpeed / 22, 0, 1),
-      });
     };
 
     objectsRef.current.forEach((obj) => {
@@ -590,6 +858,20 @@ export function VoiceTextManager() {
       if (obj.removing) return;
 
       if (obj.body) {
+        const physics = physicsRef.current;
+        physics?.limitRotation(
+          obj.body,
+          getRotationLimit(obj.lineCount, obj.width, obj.height),
+        );
+        const bodyAngle = obj.body.angle;
+        const rotatedHalfX =
+          Math.abs(Math.cos(bodyAngle)) * obj.width * 0.5 +
+          Math.abs(Math.sin(bodyAngle)) * obj.height * 0.5;
+        const centerLimitX = Math.max(
+          0,
+          region.halfWidth - rotatedHalfX - 0.06,
+        );
+        physics?.clampToRegion(obj.body, centerLimitX);
         obj.group.position.x = obj.body.position.x;
         obj.group.position.y = obj.body.position.y;
         obj.group.position.z = Z_BACK;
@@ -637,7 +919,7 @@ export function VoiceTextManager() {
                 obj.restingNotified = true;
                 publishStoneResting({
                   id: obj.id,
-                  text: obj.message.text,
+                  text: obj.text,
                   position: obj.group.position.clone(),
                 });
               }
@@ -664,7 +946,7 @@ export function VoiceTextManager() {
             obj.restingNotified = true;
             publishStoneResting({
               id: obj.id,
-              text: obj.message.text,
+              text: obj.text,
               position: obj.group.position.clone(),
             });
           }
@@ -688,7 +970,7 @@ export function VoiceTextManager() {
         }
       }
 
-      updateContactShadow(obj);
+      updateContactShadow(obj, region.halfWidth);
     });
 
     hoveredIdRef.current = updateHover(
@@ -697,7 +979,6 @@ export function VoiceTextManager() {
       hoveredIdRef.current,
       setHoveredMessage,
     );
-    effectsRef.current?.update(safeDelta);
 
     objectsRef.current.forEach((obj, id) => {
       if (obj.removing && obj.removeAt !== undefined && now >= obj.removeAt) {

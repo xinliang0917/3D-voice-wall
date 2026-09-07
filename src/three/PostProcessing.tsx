@@ -1,13 +1,13 @@
-import { EffectComposer, DepthOfField } from '@react-three/postprocessing';
+import { Bloom, EffectComposer } from '@react-three/postprocessing';
 
 export function PostProcessing() {
   return (
     <EffectComposer multisampling={0}>
-      <DepthOfField
-        target={[0, 0, -3.7]}
-        focalLength={0.06}
-        bokehScale={3.2}
-        resolutionScale={0.5}
+      <Bloom
+        intensity={1.8}
+        luminanceThreshold={0.35}
+        luminanceSmoothing={0.9}
+        mipmapBlur
       />
     </EffectComposer>
   );

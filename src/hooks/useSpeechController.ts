@@ -143,7 +143,8 @@ export function useSpeechController() {
     attach(provider, 'demo', 'mock');
     await provider.start();
     providerRef.current = provider;
-  }, [attach, clearTimers, stop]);
+    setSystemStatus('demo');
+  }, [attach, clearTimers, setSystemStatus, stop]);
 
   const startMicrophone = useCallback(
     async (language: string) => {
@@ -171,6 +172,7 @@ export function useSpeechController() {
             return;
           }
           providerRef.current = provider;
+          setSystemStatus('listening');
         } catch (error) {
           setSystemStatus('error');
           setSpeechStatus('error');
@@ -201,6 +203,7 @@ export function useSpeechController() {
             return;
           }
           providerRef.current = provider;
+          setSystemStatus('listening');
         } catch (error) {
           const code = error instanceof SpeechError ? error.code : undefined;
           if (code === 'mic' || code === 'media') {

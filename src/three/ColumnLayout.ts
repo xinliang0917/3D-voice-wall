@@ -1,4 +1,4 @@
-interface PlacedColumn {
+export interface PlacedColumn {
   id: string;
   x: number;
   halfWidth: number;
@@ -6,8 +6,6 @@ interface PlacedColumn {
 
 export type PlacementScorer = (x: number) => number;
 
-const LAYOUT_MIN_X = -14.5;
-const LAYOUT_MAX_X = 14.5;
 // Keep columns separated so stones never hide each other on the shared plane.
 const DENSITY_FACTOR = 1.02;
 const SEVERE_OVERLAP_FACTOR = 1.0;
@@ -18,14 +16,33 @@ function randomBetween(min: number, max: number): number {
 
 export class ColumnLayout {
   private readonly placed: PlacedColumn[] = [];
+  private safeHalfWidth: number;
+
+  constructor(safeHalfWidth = 14.5) {
+    this.safeHalfWidth = safeHalfWidth;
+  }
+
+  sync(entries: Iterable<PlacedColumn>): void {
+    this.placed.splice(0, this.placed.length);
+    for (const entry of entries) {
+      this.placed.push({
+        id: entry.id,
+        x: entry.x,
+        halfWidth: entry.halfWidth,
+      });
+    }
+  }
+
+  setSafeHalfWidth(halfWidth: number): void {
+    this.safeHalfWidth = Math.max(0.1, halfWidth);
+  }
 
   findPlacement(width: number, scorePlacement?: PlacementScorer): number {
     const placed = this.placed;
     const halfWidth = width / 2;
-    const minX = Math.max(LAYOUT_MIN_X, -14.8 + halfWidth);
-    const maxX = Math.min(LAYOUT_MAX_X, 14.8 - halfWidth);
-    const safeMin = Math.min(minX, maxX);
-    const safeMax = Math.max(minX, maxX);
+    const range = Math.max(0, this.safeHalfWidth - halfWidth);
+    const safeMin = -range;
+    const safeMax = range;
     let bestRandom: { x: number; score: number } | null = null;
     for (let attempt = 0; attempt < 120; attempt += 1) {
       const x = safeMin + Math.random() * (safeMax - safeMin);

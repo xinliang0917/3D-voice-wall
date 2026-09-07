@@ -1,6 +1,6 @@
 import { serverConfig } from '../config';
 import { CloudSpeechAdapter } from './CloudSpeechAdapter';
-import { DashScopeStreamingAdapter } from './DashScopeStreamingAdapter';
+import { StreamingAsrAdapter } from './StreamingAsrAdapter';
 import { MockSpeechAdapter } from './MockSpeechAdapter';
 import type { SpeechAdapter, SpeechStreamingAdapter } from './types';
 
@@ -12,11 +12,12 @@ export function createSpeechAdapter(): SpeechAdapterLike {
   }
 
   if (serverConfig.speechStreaming) {
-    return new DashScopeStreamingAdapter({
+    return new StreamingAsrAdapter({
       wsUrl: serverConfig.speechWsUrl,
       apiKey: serverConfig.speechApiKey,
       model: serverConfig.speechModel,
       timeoutMs: serverConfig.asrTimeoutMs,
+      vendor: serverConfig.speechVendor,
     });
   }
 

@@ -7,7 +7,7 @@ export interface LanguageMeta {
 }
 
 export const SUPPORTED_LANGUAGES: LanguageMeta[] = [
-  { code: 'zh-CN', name: 'Chinese', nativeName: '中文', direction: 'ltr', font: 'noto-sans-sc-chinese-simplified-700-normal.woff2' },
+  { code: 'zh-CN', name: 'Chinese', nativeName: '中文', direction: 'ltr', font: 'noto-sans-sc-chinese-simplified-700-normal.otf' },
   { code: 'en-US', name: 'English', nativeName: 'English', direction: 'ltr', font: 'noto-sans-latin-700-normal.woff2' },
   { code: 'ja-JP', name: 'Japanese', nativeName: '日本語', direction: 'ltr', font: 'noto-sans-jp-japanese-700-normal.woff2' },
   { code: 'ko-KR', name: 'Korean', nativeName: '한국어', direction: 'ltr', font: 'noto-sans-kr-korean-700-normal.woff2' },

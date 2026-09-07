@@ -12,6 +12,10 @@ export type VoiceStoneState =
 export interface VoiceTextObject {
   id: string;
   message: VoiceMessage;
+  text: string;
+  messageGroupId: string;
+  lineIndex: number;
+  lineCount: number;
   group: THREE.Group;
   mesh: THREE.Mesh;
   frontMaterial: THREE.MeshPhysicalMaterial;

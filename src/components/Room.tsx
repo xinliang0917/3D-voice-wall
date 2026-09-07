@@ -2,19 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useThree } from '@react-three/fiber';
+import { LogoBackdrop } from './LogoBackdrop';
 
 type Vec3 = [number, number, number];
 
 const NEAR_Z = -4.42;
 const FAR_Z = -11.65;
-const NEAR_HALF_W = 16.9;
-const NEAR_TOP = 10.2;
-const NEAR_BOTTOM = -10.2;
-const FAR_HALF_W = 7.0;
-const FAR_TOP = 5.5;
-const FAR_BOTTOM = -5.5;
-
-const MID_FRAME_Z = -8.0;
+const NEAR_HALF_W = 8.4;
+const NEAR_TOP = 10.5;
+const NEAR_BOTTOM = -10.5;
+const FAR_HALF_W = 4.2;
+const FAR_TOP = 5.25;
+const FAR_BOTTOM = -5.25;
 
 function colorToTuple(hex: string): [number, number, number] {
   const color = new THREE.Color(hex);
@@ -125,15 +124,6 @@ function usePanelGeometries(): {
   }, []);
 }
 
-function interpolateDimension(
-  near: number,
-  far: number,
-  z: number,
-): number {
-  const progress = (z - NEAR_Z) / (FAR_Z - NEAR_Z);
-  return THREE.MathUtils.lerp(near, far, progress);
-}
-
 function useBarTransform(start: Vec3, end: Vec3, radius: number) {
   return useMemo(() => {
     const startVector = new THREE.Vector3(...start);
@@ -162,6 +152,8 @@ interface EdgeBarProps {
   start: Vec3;
   end: Vec3;
   radius?: number;
+  color?: string;
+  emissive?: string;
   emissiveIntensity?: number;
   envMap: THREE.Texture | null;
 }
@@ -170,6 +162,8 @@ function EdgeBar({
   start,
   end,
   radius = 0.085,
+  color = '#0d3272',
+  emissive = '#2f79ea',
   emissiveIntensity = 0.34,
   envMap,
 }: EdgeBarProps) {
@@ -182,8 +176,8 @@ function EdgeBar({
   return (
     <mesh geometry={geometry} position={position} quaternion={quaternion}>
       <meshPhysicalMaterial
-        color="#0d3272"
-        emissive="#2f79ea"
+        color={color}
+        emissive={emissive}
         emissiveIntensity={emissiveIntensity}
         envMap={envMap}
         envMapIntensity={0.65}
@@ -196,74 +190,80 @@ function EdgeBar({
   );
 }
 
-function createRadialTexture(
-  stops: Array<[number, string]>,
-  transparent = false,
-): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const context = canvas.getContext('2d');
-  if (context) {
-    const gradient = context.createRadialGradient(
-      256,
-      256,
-      12,
-      256,
-      256,
-      280,
+function NeonSegment({
+  start,
+  end,
+  radius = 0.04,
+  extension = 0,
+}: {
+  start: Vec3;
+  end: Vec3;
+  radius?: number;
+  extension?: number;
+}) {
+  const { geometry, position, quaternion } = useMemo(() => {
+    const startVector = new THREE.Vector3(...start);
+    const endVector = new THREE.Vector3(...end);
+    const direction = endVector.clone().sub(startVector);
+    const normalized = direction.clone().normalize();
+    const from = startVector.clone().sub(normalized.clone().multiplyScalar(extension));
+    const to = endVector.clone().add(normalized.clone().multiplyScalar(extension));
+    const length = from.distanceTo(to);
+    const segmentGeometry = new THREE.CylinderGeometry(
+      radius,
+      radius,
+      length,
+      10,
+      1,
+      true,
     );
-    stops.forEach(([offset, color]) => gradient.addColorStop(offset, color));
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, 512, 512);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  if (transparent) texture.needsUpdate = true;
-  return texture;
+    const segmentPosition = from.clone().add(to).multiplyScalar(0.5);
+    const segmentQuaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      normalized,
+    );
+    return {
+      geometry: segmentGeometry,
+      position: segmentPosition,
+      quaternion: segmentQuaternion,
+    };
+  }, [end, extension, radius, start]);
+
+  return (
+    <mesh geometry={geometry} position={position} quaternion={quaternion}>
+      <meshPhysicalMaterial
+        color="#ffffff"
+        emissive="#ffffff"
+        emissiveIntensity={4}
+        metalness={0}
+        roughness={0.2}
+        fog={false}
+      />
+    </mesh>
+  );
 }
 
-function RibFrame({
-  z,
-  envMap,
-}: {
-  z: number;
-  envMap: THREE.Texture | null;
-}) {
-  const halfWidth = interpolateDimension(NEAR_HALF_W, FAR_HALF_W, z);
-  const top = interpolateDimension(NEAR_TOP, FAR_TOP, z);
-  const bottom = interpolateDimension(NEAR_BOTTOM, FAR_BOTTOM, z);
-  const radius = 0.075;
+function NeonChannel() {
+  const horizontalZ = -10.5;
+  const horizontalY = 5.43;
+  const leftCornerX = -3.46;
+  const rightCornerX = 3.46;
+  const leftTop: Vec3 = [-4.9, 7.16, -4.55];
+  const rightTop: Vec3 = [4.9, 7.16, -4.55];
 
   return (
     <group>
-      <EdgeBar
-        start={[-halfWidth, top, z]}
-        end={[halfWidth, top, z]}
-        radius={radius}
-        emissiveIntensity={0.18}
-        envMap={envMap}
+      <NeonSegment
+        start={leftTop}
+        end={[leftCornerX, horizontalY, horizontalZ]}
       />
-      <EdgeBar
-        start={[-halfWidth, bottom, z]}
-        end={[halfWidth, bottom, z]}
-        radius={radius}
-        emissiveIntensity={0.14}
-        envMap={envMap}
+      <NeonSegment
+        start={[leftCornerX, horizontalY, horizontalZ]}
+        end={[rightCornerX, horizontalY, horizontalZ]}
       />
-      <EdgeBar
-        start={[-halfWidth, bottom, z]}
-        end={[-halfWidth, top, z]}
-        radius={radius}
-        emissiveIntensity={0.2}
-        envMap={envMap}
-      />
-      <EdgeBar
-        start={[halfWidth, bottom, z]}
-        end={[halfWidth, top, z]}
-        radius={radius}
-        emissiveIntensity={0.2}
-        envMap={envMap}
+      <NeonSegment
+        start={[rightCornerX, horizontalY, horizontalZ]}
+        end={rightTop}
       />
     </group>
   );
@@ -314,29 +314,6 @@ export function Room() {
     };
   }, [gl]);
 
-  const screenTexture = useMemo(
-    () =>
-      createRadialTexture([
-        [0, '#9fd0ff'],
-        [0.32, '#55a2ff'],
-        [0.62, '#2069d9'],
-        [0.84, '#123f92'],
-        [1, '#0b2a69'],
-      ]),
-    [],
-  );
-
-  const glowTexture = useMemo(
-    () =>
-      createRadialTexture([
-        [0, 'rgba(130, 190, 255, 0.92)'],
-        [0.38, 'rgba(70, 135, 245, 0.5)'],
-        [0.68, 'rgba(35, 95, 225, 0.16)'],
-        [1, 'rgba(8, 30, 90, 0)'],
-      ]),
-    [],
-  );
-
   return (
     <group>
       <mesh geometry={geometries.ceiling} receiveShadow>
@@ -352,59 +329,12 @@ export function Room() {
         <WallMaterial envMap={envMap} />
       </mesh>
 
-      <EdgeBar
-        start={[-NEAR_HALF_W, NEAR_TOP, NEAR_Z]}
-        end={[-FAR_HALF_W, FAR_TOP, FAR_Z]}
-        radius={0.12}
-        emissiveIntensity={0.42}
-        envMap={envMap}
-      />
-      <EdgeBar
-        start={[NEAR_HALF_W, NEAR_TOP, NEAR_Z]}
-        end={[FAR_HALF_W, FAR_TOP, FAR_Z]}
-        radius={0.12}
-        emissiveIntensity={0.42}
-        envMap={envMap}
-      />
-      <EdgeBar
-        start={[-NEAR_HALF_W, NEAR_BOTTOM, NEAR_Z]}
-        end={[-FAR_HALF_W, FAR_BOTTOM, FAR_Z]}
-        radius={0.1}
-        emissiveIntensity={0.32}
-        envMap={envMap}
-      />
-      <EdgeBar
-        start={[NEAR_HALF_W, NEAR_BOTTOM, NEAR_Z]}
-        end={[FAR_HALF_W, FAR_BOTTOM, FAR_Z]}
-        radius={0.1}
-        emissiveIntensity={0.32}
-        envMap={envMap}
-      />
-
-      <RibFrame z={MID_FRAME_Z} envMap={envMap} />
-
-      <mesh position={[0, 0, FAR_Z - 0.42]}>
-        <planeGeometry args={[20, 16]} />
-        <meshBasicMaterial
-          map={glowTexture}
-          transparent
-          opacity={0.42}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          fog={false}
-        />
-      </mesh>
-
-      <mesh position={[0, 0, FAR_Z - 0.22]}>
-        <planeGeometry args={[FAR_HALF_W * 2, FAR_TOP - FAR_BOTTOM]} />
-        <meshBasicMaterial map={screenTexture} color="#ffffff" fog={false} />
-      </mesh>
-
+      <NeonChannel />
       <EdgeBar
         start={[-FAR_HALF_W, FAR_TOP, FAR_Z]}
         end={[FAR_HALF_W, FAR_TOP, FAR_Z]}
-        radius={0.11}
-        emissiveIntensity={0.62}
+        radius={0.09}
+        emissiveIntensity={0.5}
         envMap={envMap}
       />
       <EdgeBar
@@ -417,25 +347,34 @@ export function Room() {
       <EdgeBar
         start={[-FAR_HALF_W, FAR_BOTTOM, FAR_Z]}
         end={[-FAR_HALF_W, FAR_TOP, FAR_Z]}
-        radius={0.12}
-        emissiveIntensity={0.72}
+        radius={0.09}
+        emissiveIntensity={0.5}
         envMap={envMap}
       />
       <EdgeBar
         start={[FAR_HALF_W, FAR_BOTTOM, FAR_Z]}
         end={[FAR_HALF_W, FAR_TOP, FAR_Z]}
-        radius={0.12}
-        emissiveIntensity={0.72}
+        radius={0.09}
+        emissiveIntensity={0.5}
         envMap={envMap}
       />
 
       <pointLight
-        position={[0, -1.4, FAR_Z + 1.8]}
-        intensity={3.2}
-        distance={18}
+        position={[-4.26, 6.4, -8.1]}
+        intensity={2.2}
+        distance={26}
         decay={2}
-        color="#74aaff"
+        color="#4f9bff"
       />
+      <pointLight
+        position={[4.26, 6.4, -8.1]}
+        intensity={2.2}
+        distance={26}
+        decay={2}
+        color="#4f9bff"
+      />
+
+      <LogoBackdrop envMap={envMap} />
     </group>
   );
 }

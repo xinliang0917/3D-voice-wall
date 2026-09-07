@@ -219,6 +219,7 @@ export function attachSpeechWebSocket(httpServer: Server, adapter: SpeechAdapter
             typeof message.languageHint === 'string'
               ? message.languageHint
               : serverConfig.speechLanguageHint;
+          session.streamingSession?.setLanguageHint(session.languageHint);
           sendJson(socket, { type: 'ready' });
         } else if (message.type === 'flush') {
           if (session.streamingSession) {

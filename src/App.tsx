@@ -1,33 +1,49 @@
-import { useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useEffect, useState } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import { useVoiceStore } from './store/voiceStore';
 import { useSpeechController } from './hooks/useSpeechController';
-import { VoiceTextManager } from './components/VoiceTextManager';
+import { useIdlePhraseFallback } from './hooks/useIdlePhraseFallback';
 import { Room } from './components/Room';
-import { Header } from './components/Header';
-import { SpeechHud } from './components/SpeechHud';
 import { LanguageStats } from './components/LanguageStats';
 import { VoiceVisualizer } from './components/VoiceVisualizer';
+import { VoiceForegroundLayer } from './components/VoiceForegroundLayer';
 import { ControlBar } from './components/ControlBar';
 import { HoverInfo } from './components/HoverInfo';
-import { LogoBackdrop } from './components/LogoBackdrop';
+import { PostProcessing } from './three/PostProcessing';
+
+function DisplayCamera() {
+  const camera = useThree((state) => state.camera);
+  const aspect = useThree((state) => state.viewport.aspect);
+
+  useEffect(() => {
+    const perspective = camera as THREE.PerspectiveCamera;
+    if (!perspective.isPerspectiveCamera) return;
+    const isPortrait = aspect < 1;
+    perspective.fov = isPortrait ? 42 : 50;
+    perspective.updateProjectionMatrix();
+  }, [aspect, camera]);
+
+  return null;
+}
 
 export default function App() {
   const systemStatus = useVoiceStore((state) => state.systemStatus);
   const { startMicrophone, startDemo, stop, reset } = useSpeechController();
+  useIdlePhraseFallback();
   const [language, setLanguage] = useState('');
 
   return (
     <div className="app">
       <div className="canvas-shell">
         <Canvas
-          flat
           shadows
           dpr={[1, 2]}
           camera={{ position: [0, 0, 14.2], fov: 50 }}
           onCreated={({ camera }) => camera.lookAt(0, 0, -4.25)}
           gl={{ antialias: true, alpha: true }}
         >
+          <DisplayCamera />
           <color attach="background" args={['#0b2f6b']} />
           <fog attach="fog" args={['#0b2f6b', 18, 38]} />
           <ambientLight intensity={0.9} color="#ffffff" />
@@ -54,16 +70,14 @@ export default function App() {
           />
           <pointLight position={[0, 2.5, 5]} intensity={0.6} color="#ffffff" />
           <Room />
-          <LogoBackdrop />
-          <VoiceTextManager />
+          <PostProcessing />
         </Canvas>
       </div>
 
       <div className="ui-layer">
-        <Header />
-        <SpeechHud />
         <LanguageStats />
         <VoiceVisualizer />
+        <VoiceForegroundLayer />
         <HoverInfo />
         <ControlBar
           mode={systemStatus}

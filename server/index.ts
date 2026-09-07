@@ -18,7 +18,10 @@ app.get('/api/health', (_request, response) => {
   response.json({
     ok: true,
     provider: adapter.name,
-    streaming: isStreamingSpeechAdapter(adapter),
+    streaming:
+      isStreamingSpeechAdapter(adapter) &&
+      serverConfig.speechStreaming &&
+      serverConfig.speechVendor === 'dashscope',
   });
 });
 

@@ -24,6 +24,7 @@ export interface SpeechStreamingCallbacks {
 
 export interface SpeechStreamingSession {
   feed(chunk: Buffer): void;
+  setLanguageHint(languageHint: string | null): void;
   flush(): Promise<void>;
   stop(): Promise<void>;
 }

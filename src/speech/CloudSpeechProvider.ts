@@ -396,15 +396,25 @@ export class CloudSpeechProvider implements SpeechRecognitionProvider {
       return;
     }
 
-    void segment.arrayBuffer().then((buffer) => {
+    void (async () => {
+      const buffer = await segment.arrayBuffer();
+      const chunkSize = 16384;
+      for (let offset = 0; offset < buffer.byteLength; offset += chunkSize) {
+        if (!this.running || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+          this.pendingFlush = false;
+          this.errorCallback?.(new SpeechError('语音服务连接断开', 'network'));
+          return;
+        }
+        this.socket.send(buffer.slice(offset, offset + chunkSize));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       if (!this.running || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
         this.pendingFlush = false;
         this.errorCallback?.(new SpeechError('语音服务连接断开', 'network'));
         return;
       }
-      this.socket.send(buffer);
       this.socket.send(JSON.stringify({ type: 'flush' }));
-    });
+    })();
   }
 
   private scheduleListening(delayMs: number): void {
